@@ -12,12 +12,18 @@ struct MapEntry {
     offset: usize,
     span: usize,
     addr: usize,
-    flags: FlagBuilder
+    flags: FlagBuilder,
 }
 
 impl MapEntry {
     #[must_use] // <- not using return value of "new" doesn't make sense, so warn
-    pub fn new(source: Arc<dyn DataSource>, offset: usize, span: usize, addr: usize, flags: FlagBuilder) -> MapEntry {
+    pub fn new(
+        source: Arc<dyn DataSource>,
+        offset: usize,
+        span: usize,
+        addr: usize,
+        flags: FlagBuilder,
+    ) -> MapEntry {
         MapEntry {
             source: source.clone(),
             offset,
@@ -97,9 +103,16 @@ impl AddressSpace {
         offset: usize,
         span: usize,
         start: VirtualAddress,
-        flags: FlagBuilder
-    ) -> Result<(), &str> {
-        todo!()
+        flags: FlagBuilder,
+    ) -> Result<VirtualAddress, &str> {
+        if start + span + 2 * PAGE_SIZE < VADDR_MAX {
+            let mapping_addr = start + PAGE_SIZE;
+            let new_mapping = MapEntry::new(source, offset, span, mapping_addr, flags);
+            self.mappings.push(new_mapping);
+            self.mappings.sort_by(|a, b| a.addr.cmp(&b.addr));
+            return Ok(mapping_addr);
+        }
+        Err("Not enough space to add mapping!")
     }
 
     /// Remove the mapping to `DataSource` that starts at the given address.
@@ -107,11 +120,17 @@ impl AddressSpace {
     /// # Errors
     /// If the mapping could not be removed.
     pub fn remove_mapping<D: DataSource>(
-        &self,
+        &mut self,
         source: Arc<D>,
         start: VirtualAddress,
     ) -> Result<(), &str> {
-        todo!()
+        let index_of_mapping = self
+            .mappings
+            .iter()
+            .position(|x| x.offset == start) // && *x.source == *source) <- How to use source? Why are we passing source into removemapping
+            .unwrap();
+        self.mappings.remove(index_of_mapping);
+        Ok(())
     }
 
     /// Look up the DataSource and offset within that DataSource for a
@@ -124,13 +143,18 @@ impl AddressSpace {
         &self,
         addr: VirtualAddress,
         access_type: FlagBuilder,
-    ) -> Result<(Arc<D>, usize), &str> {
-        todo!();
+    ) -> Result<(Arc<dyn DataSource + 'static>, usize), &str> {
+        let index_of_mapping = self.mappings.iter().position(|x| x.addr == addr).unwrap();
+        let mapping = &self.mappings[index_of_mapping];
+        Ok((mapping.source.clone(), mapping.offset))
+        //I'm not sure if this is actually what we want,
+        //but I can't figure out how to do this without cloning
     }
 
     /// Helper function for looking up mappings
-    fn get_mapping_for_addr(&self, addr: VirtualAddress) -> Result<MapEntry, &str> {
-        todo!();
+    fn get_mapping_for_addr(&self, addr: VirtualAddress) -> &MapEntry {
+        let index_of_mapping = self.mappings.iter().position(|x| x.addr == addr).unwrap();
+        &self.mappings[index_of_mapping]
     }
 }
 
@@ -160,20 +184,24 @@ pub struct FlagBuilder {
 
 impl FlagBuilder {
     pub fn check_access_perms(&self, access_perms: FlagBuilder) -> bool {
-        if access_perms.read && !self.read || access_perms.write && !self.write || access_perms.execute && !self.execute {
+        if access_perms.read && !self.read
+            || access_perms.write && !self.write
+            || access_perms.execute && !self.execute
+        {
             return false;
-        }    
-        true    
+        }
+        true
     }
 
     pub fn is_valid(&self) -> bool {
         if self.private && self.shared {
             return false;
         }
-        if self.cow && self.write { // for COW to work, write needs to be off until after the copy
+        if self.cow && self.write {
+            // for COW to work, write needs to be off until after the copy
             return false;
         }
-        return true;
+        true
     }
 }
 /// Create a constructor and toggler for a `FlagBuilder` object. Will capture attributes, including documentation

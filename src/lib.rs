@@ -33,8 +33,8 @@ mod tests {
 
         let ds_arc = Arc::new(data_source);
 
-        let addr = addr_space
-            .add_mapping(ds_arc.clone(), offset, length, read_flags)
+        let addr: usize = addr_space
+            .add_mapping(ds_arc.clone(), offset, length, read_flags) //VirtualAddress is a usize
             .unwrap();
         assert!(addr != 0);
 
@@ -43,5 +43,29 @@ mod tests {
             .unwrap();
         assert!(addr2 != 0);
         assert!(addr2 != addr);
+    }
+
+    #[test]
+    fn test_remove_mapping() {
+        //Create just one address space
+        let mut addr_space: AddressSpace = AddressSpace::new("Second test address space");
+        let data_source: FileDataSource = FileDataSource::new("README.md").unwrap();
+        let offset: usize = 0;
+        let length: usize = 1;
+        let read_flags = FlagBuilder::new().toggle_read();
+
+        let ds_arc = Arc::new(data_source);
+
+        let addr: usize = addr_space
+            //Add one mapping
+            .add_mapping(ds_arc.clone(), offset, length, read_flags)
+            .unwrap();
+        assert!(addr != 0);
+        // assert_eq!(addr_space.get); //We want one mapping to exist                                  //Remove the mapping
+        let res = addr_space.remove_mapping(ds_arc, offset);
+        println!("Succeeded first remove");
+        // addr_space.remove_mapping(ds_arc, offset);
+
+        //We want no mapping to exist
     }
 }
